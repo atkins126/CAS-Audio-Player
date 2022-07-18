@@ -10,7 +10,7 @@
 //   Creation: 12/04/2021 by Airton Junior
 //
 ////////////////////////////////////////////////////////////////////////////////
-unit MainForm;
+unit PlayerFormU;
 
 interface
 
@@ -21,6 +21,7 @@ uses
   System.SysUtils,
   System.UITypes,
   System.ImageList,
+  System.Generics.Collections,
   Vcl.ComCtrls,
   Vcl.StdCtrls,
   Vcl.Dialogs,
@@ -39,7 +40,9 @@ uses
   CasDecoderU,
   CasTrackU,
   CasConstantsU,
-  AcrylicFormU;
+  AcrylicFormU,
+  AcrylicButtonU,
+  AcrylicTrackU;
 
 type
   TPlayerGUI = class(TAcrylicForm)
@@ -48,7 +51,11 @@ type
     tbProgress            : TTrackBar;
     tbSpeed               : TTrackBar;
     cbDriver              : TComboBox;
-    sbTrackList           : TScrollBox;
+    btnPlay               : TAcrylicButton;
+    btnPause              : TAcrylicButton;
+    btnStop               : TAcrylicButton;
+    btnOpenFile           : TAcrylicButton;
+    btnDriverControlPanel : TAcrylicButton;
 
 
     procedure FormCreate                 (Sender: TObject);
@@ -59,13 +66,12 @@ type
     procedure btnPauseClick              (Sender: TObject);
     procedure btnStopClick               (Sender: TObject);
     procedure btnPlayClick               (Sender: TObject);
-    procedure btnJumpClick               (Sender: TObject);
+    procedure btnDeleteClick             (Sender: TObject);
     procedure btnOpenFileClick           (Sender: TObject);
+    procedure trackClick                 (Sender: TObject);
     procedure tbVolumeChange             (Sender: TObject);
     procedure tbProgressChange           (Sender: TObject);
     procedure tbSpeedChange              (Sender: TObject);
-    procedure sbTrackListMouseWheelUp    (Sender: TObject; Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
-    procedure sbTrackListMouseWheelDown  (Sender: TObject; Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
 
 
   private
@@ -83,10 +89,11 @@ type
     m_GdiBrush                   : TGPSolidBrush;
 
     m_DriverList                 : TAsioDriverList;
+    m_lstTracks                  : TList<TPanel>;
 
     procedure EngineNotification(var MsgRec: TMessage); message CM_NotifyOwner;
 
-    procedure AddTrackInfo(a_strTitle : String; a_nTrackId : Integer);
+    procedure AddTrackInfo(a_CasTrack : TCasTrack);
 
     procedure InitializeVariables;
     procedure RecreateGdiObject;
@@ -106,8 +113,7 @@ uses
   GDIPAPI,
   GDIPUTIL,
   Vcl.Imaging.pngimage,
-  AcrylicButtonU,
-  AcrylicLabelU;
+  CasUtilsU;
 
 {$R *.dfm}
 
@@ -131,64 +137,25 @@ end;
 //==============================================================================
 procedure TPlayerGUI.CREATE_ACRYLIC_OBJECTS;
 var
-  acrylicbutton: tacrylicbutton;
-  png : TPngImage;
+  pngImage : TPngImage;
 begin
-  acrylicbutton := tacrylicbutton.Create(Self);
-  acrylicbutton.Parent := Self;
-  acrylicbutton.Top := 48;
-  acrylicbutton.Left := 142;
-  acrylicbutton.Width := 85;
-  acrylicbutton.Height := 53;
-  acrylicbutton.OnClick := btnPlayClick;
-  png := TPngImage.Create;
-  png.LoadFromResourceName(HInstance, 'btnPlay');
-  acrylicbutton.Png := png;
+  pngImage := TPngImage.Create;
+  pngImage.LoadFromResourceName(HInstance, 'btnPlay');
+  btnPlay.Png := pngImage;
 
-  acrylicbutton := tacrylicbutton.Create(Self);
-  acrylicbutton.Parent := Self;
-  acrylicbutton.Top := 48;
-  acrylicbutton.Left := 235;
-  acrylicbutton.Width := 85;
-  acrylicbutton.Height := 53;
-  acrylicbutton.OnClick := btnPauseClick;
-  png := TPngImage.Create;
-  png.LoadFromResourceName(HInstance, 'btnPause');
-  acrylicbutton.Png := png;
+  pngImage := TPngImage.Create;
+  pngImage.LoadFromResourceName(HInstance, 'btnPause');
+  btnPause.Png := pngImage;
 
-  acrylicbutton := tacrylicbutton.Create(Self);
-  acrylicbutton.Parent := Self;
-  acrylicbutton.Top := 48;
-  acrylicbutton.Left := 328;
-  acrylicbutton.Width := 85;
-  acrylicbutton.Height := 53;
-  acrylicbutton.OnClick := btnStopClick;
-  png := TPngImage.Create;
-  png.LoadFromResourceName(HInstance, 'btnStop');
-  acrylicbutton.Png := png;
-
-  acrylicbutton := tacrylicbutton.Create(Self);
-  acrylicbutton.Parent := Self;
-  acrylicbutton.Top := 77;
-  acrylicbutton.Left := 26;
-  acrylicbutton.Width := 108;
-  acrylicbutton.Height := 24;
-  acrylicbutton.OnClick := btnOpenFileClick;
-  acrylicbutton.Text := 'Open File';
-
-  acrylicbutton := tacrylicbutton.Create(Self);
-  acrylicbutton.Parent := Self;
-  acrylicbutton.Top := 107;
-  acrylicbutton.Left := 26;
-  acrylicbutton.Width := 108;
-  acrylicbutton.Height := 24;
-  acrylicbutton.OnClick := btnDriverControlPanelClick;
-  acrylicbutton.Text := 'ASIO Control Panel';
-
+  pngImage := TPngImage.Create;
+  pngImage.LoadFromResourceName(HInstance, 'btnStop');
+  btnStop.Png := pngImage;
 end;
 
 //==============================================================================
 procedure TPlayerGUI.FormDestroy(Sender: TObject);
+var
+  pnlPanel : TPanel;
 begin
   m_CasEngine.Free;
   m_CasDecoder.Free;
@@ -197,6 +164,11 @@ begin
   m_GdiGraphics.Free;
   m_GdiSolidPen.Free;
   m_GdiBrush.Free;
+
+  for pnlPanel in m_lstTracks do
+    pnlPanel.Destroy;
+
+  m_lstTracks.Free;
 
   SetLength(m_DriverList, 0);
 end;
@@ -220,9 +192,11 @@ procedure TPlayerGUI.InitializeVariables;
 var
   nDriverIdx : Integer;
 begin
-  m_CasEngine  := TCasEngine.Create(Self, Handle);
-  m_CasDecoder := TCasDecoder.Create;
-  m_CasTrack   := nil;
+  m_CasEngine   := TCasEngine.Create(Self, Handle);
+  m_CasDecoder  := TCasDecoder.Create;
+  m_CasTrack    := nil;
+
+  m_lstTracks   := TList<TPanel>.Create;
 
   m_GdiGraphics := TGPGraphics.Create(0);
   m_GdiSolidPen := TGPPen.Create(0, 1);
@@ -240,6 +214,9 @@ begin
   ListAsioDrivers(m_DriverList);
   for nDriverIdx := Low(m_DriverList) to High(m_DriverList) do
     cbDriver.Items.Add(String(m_DriverList[nDriverIdx].name));
+
+  cbDriver.ItemIndex := High(m_DriverList);
+  cbDriverChange(cbDriver);
 end;
 
 //==============================================================================
@@ -283,20 +260,6 @@ begin
 end;
 
 //==============================================================================
-procedure TPlayerGUI.sbTrackListMouseWheelDown(Sender: TObject;
-  Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
-begin
-  sbTrackList.VertScrollBar.Position := sbTrackList.VertScrollBar.ScrollPos + 8;
-end;
-
-//==============================================================================
-procedure TPlayerGUI.sbTrackListMouseWheelUp(Sender: TObject;
-  Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
-begin
-  sbTrackList.VertScrollBar.Position := sbTrackList.VertScrollBar.ScrollPos - 8;
-end;
-
-//==============================================================================
 procedure TPlayerGUI.cbDriverChange(Sender: TObject);
 begin
   m_CasEngine.ChangeDriver(cbDriver.ItemIndex);
@@ -325,8 +288,10 @@ begin
         m_CasEngine.AddTrack(m_CasTrack, 0);
         m_CasEngine.AddTrackToPlaylist(m_CasTrack.ID, m_CasEngine.Length);
 
-        AddTrackInfo(m_CasTrack.Title, m_CasTrack.ID);
+        AddTrackInfo(m_CasTrack);
       end;
+
+      Height := 150 + m_nLoadedTrackCount * 60 + 10 * BoolToInt(m_nLoadedTrackCount > 0);
     except
       m_bFileLoaded := False;
     end;
@@ -414,52 +379,94 @@ end;
 
 //==============================================================================
 procedure TPlayerGUI.UpdateProgressBar;
+var
+  CasTrack  : TCasTrack;
+  dProgress : Double;
+  nPanelIdx : Integer;
+  nTrackIdx : Integer;
 begin
   m_bBlockBufferPositionUpdate := True;
   tbProgress.Position          := Trunc(m_CasEngine.Progress*tbProgress.Max);
   m_bBlockBufferPositionUpdate := False;
+  CasTrack                     := nil;
+
+  for nPanelIdx := 0 to m_lstTracks.Count - 1 do
+  begin
+    if m_CasEngine.Database.GetTrackByID(StrToInt(String((m_lstTracks.Items[nPanelIdx] as TPanel).Name).SubString(3)), CasTrack) then
+    begin
+      dProgress := (m_CasEngine.Position - CasTrack.Position) / CasTrack.Size;
+
+      ((m_lstTracks.Items[nPanelIdx] as TPanel).Controls[1] as TAcrylicTrack).Position := dProgress;
+
+      if (dProgress > 0) and (dProgress <= 1) then
+        ((m_lstTracks.Items[nPanelIdx] as TPanel).Controls[1] as TAcrylicTrack).Invalidate;
+    end;
+  end;
 end;
 
 //==============================================================================
-procedure TPlayerGUI.AddTrackInfo(a_strTitle : String; a_nTrackId : Integer);
+procedure TPlayerGUI.AddTrackInfo(a_CasTrack : TCasTrack);
 var
-  lblTitle : TAcrylicLabel;
-  btnPlay  : TAcrylicButton;
+  pnlTrack     : TPanel;
+  btnRemove    : TAcrylicButton;
+  AcrylicTrack : TAcrylicTrack;
 begin
-  sbTrackList.VertScrollBar.Position := 0;
+  pnlTrack             := TPanel.Create(Self);
+  pnlTrack.Parent      := Self;
+  pnlTrack.BevelOuter  := bvNone;
+  pnlTrack.Align       := alNone;
+  pnlTrack.Caption     := '';
+  pnlTrack.Name        := 'pnl' + IntToStr(a_CasTrack.ID);
+  pnlTrack.Width       := Self.Width - 50;
+  pnlTrack.Height      := 55;
+  pnlTrack.Left        := 25;
+  pnlTrack.Top         := m_nLoadedTrackCount * 60 + 145;
 
-  lblTitle             := TAcrylicLabel.Create(sbTrackList);
-  lblTitle.Parent      := sbTrackList;
-  lblTitle.Align       := alNone;
-  lblTitle.Font.Size   := 10;
-  lblTitle.Caption     := ' ' + IntToStr(m_nLoadedTrackCount + 1) + ') ' + a_strTitle;
-  lblTitle.Top         := m_nLoadedTrackCount*25 + 3;
-  lblTitle.Left        := 2;
-  lblTitle.Width       := sbTrackList.Width - 75;
-  lblTitle.Height      := 20;
-  lblTitle.Transparent := False;
-  lblTitle.Color       := clWhite;
+  m_lstTracks.add(pnlTrack);
 
-  btnPlay              := TAcrylicButton.Create(sbTrackList);
-  btnPlay.Parent       := sbTrackList;
-  btnPlay.Align        := alNone;
-  btnPlay.Text         := 'Jump';
-  btnPlay.Name         := 'btn' + IntToStr(a_nTrackId);
-  btnPlay.OnClick      := btnJumpClick;
-  btnPlay.Width        := 40;
-  btnPlay.Height       := 20;
-  btnPlay.Left         := sbTrackList.Width - btnPlay.Width - 25;
-  btnPlay.Top          := m_nLoadedTrackCount*25 + 3;
+  btnRemove            := TAcrylicButton.Create(pnlTrack);
+  btnRemove.Parent     := pnlTrack;
+  btnRemove.Align      := alRight;
+  btnRemove.Text       := 'Remove';
+  btnRemove.Name       := 'btnRemove_' + IntToStr(a_CasTrack.ID);
+  btnRemove.OnClick    := btnDeleteClick;
+  btnRemove.Width      := 60;
+  btnRemove.Height     := 50;
+
+  AcrylicTrack         := TAcrylicTrack.Create(pnlTrack);
+  AcrylicTrack.Parent  := pnlTrack;
+  AcrylicTrack.Align   := alLeft;
+  AcrylicTrack.Width   := pnlTrack.Width - 70;
+  AcrylicTrack.Height  := 50;
+  AcrylicTrack.OnClick := trackClick;
+  AcrylicTrack.Text    := IntToStr(m_nLoadedTrackCount + 1) + ') ' + a_CasTrack.Title;
+  AcrylicTrack.Name    := 'trkTrack_' + IntToStr(a_CasTrack.ID);
+  AcrylicTrack.SetData(@m_CasTrack.RawData.Right, m_CasTrack.Size);
 
   Inc(m_nLoadedTrackCount);
 end;
 
 //==============================================================================
-procedure TPlayerGUI.btnJumpClick(Sender : TObject);
+procedure TPlayerGUI.btnDeleteClick(Sender : TObject);
 var
   CasTrack : TCasTrack;
 begin
-  if m_CasEngine.Database.GetTrackByID(StrToInt(String((Sender as TAcrylicButton).Name).SubString(3)), CasTrack) then
+  if m_CasEngine.Database.GetTrackByID(StrToInt(String((Sender as TAcrylicButton).Parent.Name).SubString(3)), CasTrack) then
+  begin
+    m_CasEngine.Playlist.RemoveTrack(CasTrack.ID);
+    m_CasEngine.MainMixer.RemoveTrack(CasTrack.ID);
+    CasTrack.Destroy;
+  end;
+
+  (Sender as TAcrylicButton).Parent.Destroy;
+end;
+
+//==============================================================================
+procedure TPlayerGUI.trackClick(Sender : TObject);
+var
+  CasTrack : TCasTrack;
+begin
+  if m_CasEngine.Database.GetTrackByID(StrToInt(String((Sender as TAcrylicTrack).Parent.Name).SubString(3)), CasTrack) then
     m_CasEngine.Position := CasTrack.Position;
 end;
 
